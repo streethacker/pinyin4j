@@ -19,6 +19,9 @@ import net.sourceforge.pinyin4j.format.HanyuPinyinOutputFormat;
 import net.sourceforge.pinyin4j.format.exception.BadHanyuPinyinOutputFormatCombination;
 import net.sourceforge.pinyin4j.multipinyin.Trie;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * A class provides several utility functions to convert Chinese characters
  * (both Simplified and Tranditional) into various Chinese Romanization
@@ -235,34 +238,41 @@ public class PinyinHelper {
     }
 
     /**
-     * Get a string which all Chinese characters are replaced by corresponding
-     * main (first) Hanyu Pinyin representation.
-     * <p>
-     * <p>
+     * Get a string array in which each element is the complete pinyin spelling of a Chinese
+     * character(or a retained character that cannot be converted into pinyin characters)
+     *
+     * e.g.
+     *
+     * if the output formats are configured as follows:
+     *
+     * <code>HanyuPinyinToneType.WITHOUT_TONE</code>
+     * <code>HanyuPinyinVCharType.WITH_V</code>
+     *
+     * The Chinese sentence "一人做事一人当" would be transferred into:
+     *
+     * <code>["yi", "ren", "zuo", "shi", "yi", "ren", "dang", "ren", "zuo", "shi", "yi", "ren", "dang"]</code>
+     *
      * <b>Special Note</b>: If the return contains "none0", that means that
-     * Chinese character is in Unicode CJK talbe, however, it has not
-     * pronounciation in Chinese. <b> This interface will be removed in next
-     * release. </b>
+     * Chinese character is in Unicode CJK table, however, it has no
+     * pronunciation in Chinese.
      *
      * @param str          A given string contains Chinese characters
      * @param outputFormat Describes the desired format of returned Hanyu Pinyin string
-     * @param separate     The string is appended after a Chinese character (excluding
-     *                     the last Chinese character at the end of sentence). <b>Note!
-     *                     Separate will not appear after a non-Chinese character</b>
      * @param retain       Retain the characters that cannot be converted into pinyin characters
-     * @return a String identical to the original one but all recognizable
-     * Chinese characters are converted into main (first) Hanyu Pinyin
-     * representation
+     * @return a string array consists of complete pinyin spelling of all Chinese characters(or retained
+     * characters that cannot be converted)
+     * @throws BadHanyuPinyinOutputFormatCombination  An exception class indicates the wrong combination
+     * of pinyin output formats
      */
-    static public String toHanYuPinyinString(String str, HanyuPinyinOutputFormat outputFormat,
-                                             String separate, boolean retain) throws BadHanyuPinyinOutputFormatCombination {
+    static public String[] toHanYuPinyinWordArray(String str, HanyuPinyinOutputFormat outputFormat,
+                                                  boolean retain) throws BadHanyuPinyinOutputFormatCombination {
         ChineseToPinyinResource resource = ChineseToPinyinResource.getInstance();
-        StringBuilder resultPinyinStrBuf = new StringBuilder();
+        List<String> resultWordList = new ArrayList<String>();
 
         char[] chars = str.toCharArray();
 
         for (int i = 0; i < chars.length; i++) {
-            String result = null;//匹配到的最长的结果
+            String result = null;
             char ch = chars[i];
             Trie currentTrie = resource.getUnicodeToHanyuPinyinTable();
             int success = i;
@@ -285,24 +295,65 @@ public class PinyinHelper {
             }
             while (currentTrie != null);
 
-            if (result == null) {//如果在前缀树中没有匹配到，那么它就不能转换为拼音，直接输出或者去掉
-                if (retain) resultPinyinStrBuf.append(chars[i]);
+            if (result == null) {
+                if (retain) {
+                    resultWordList.add(Character.toString(chars[i]));
+                }
             } else {
                 String[] pinyinStrArray = resource.parsePinyinString(result);
                 if (pinyinStrArray != null) {
                     for (int j = 0; j < pinyinStrArray.length; j++) {
-                        resultPinyinStrBuf.append(PinyinFormatter.formatHanyuPinyin(pinyinStrArray[j], outputFormat));
-                        if (current < chars.length || (j < pinyinStrArray.length - 1 && i != success)) {//不是最后一个,(也不是拼音的最后一个,并且不是最后匹配成功的)
-                            resultPinyinStrBuf.append(separate);
-                        }
-                        if (i == success)
+                        resultWordList.add(PinyinFormatter.formatHanyuPinyin(pinyinStrArray[j], outputFormat));
+                        if (i == success) {
                             break;
+                        }
                     }
                 }
             }
-            i = success;
         }
 
+        String[] resultWordArray = new String[resultWordList.size()];
+        return resultWordList.toArray(resultWordArray);
+    }
+
+
+    /**
+     * The more straightforward way to get a string which all Chinese characters are replaced
+     * by corresponding Hanyu Pinyin characters and joined by a given delimiter.
+     *
+     * <b>Caution:</b>
+     *
+     * The <b>separate symbol</b> is left out after the non-Chinese character in the old version,
+     * however, would be remained in the new version.
+     *
+     * Suppose the same Chinese sentence: "1人做事1人当", it would be transferred into:
+     *
+     * "1ren,zuo,shi,1ren,dang" - in old version
+     *
+     * and
+     *
+     * "1,ren,zuo,shi,1,ren,dang" - in new version
+     *
+     * @param str          A given string contains Chinese characters
+     * @param outputFormat Describes the desired format of returned Hanyu Pinyin string
+     * @param separate     The string is appended after a Chinese character (excluding
+     *                     the last Chinese character at the end of sentence). <b>Note!
+     *                     Separate will not appear after a non-Chinese character</b>
+     * @param retain       Retain the characters that cannot be converted into pinyin characters
+     * @return a string consists of converted Hanyu Pinyin characters joined by the delimiter
+     * @throws BadHanyuPinyinOutputFormatCombination An exception class indicates the wrong combination
+     * of pinyin output formats
+     */
+    static public String toHanYuPinyinString(String str, HanyuPinyinOutputFormat outputFormat,
+                                             String separate, boolean retain) throws BadHanyuPinyinOutputFormatCombination {
+        StringBuilder resultPinyinStrBuf = new StringBuilder();
+        String[] resultWordArray = toHanYuPinyinWordArray(str, outputFormat, retain);
+        for (int i = 0; i < resultWordArray.length; i++) {
+            resultPinyinStrBuf.append(resultWordArray[i]);
+            if (i < resultWordArray.length - 1) {
+                resultPinyinStrBuf.append(separate);
+            }
+        }
         return resultPinyinStrBuf.toString();
     }
 
